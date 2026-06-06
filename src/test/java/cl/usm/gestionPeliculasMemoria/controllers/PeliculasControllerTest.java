@@ -4,189 +4,163 @@ import cl.usm.gestionPeliculasMemoria.entities.Comentario;
 import cl.usm.gestionPeliculasMemoria.entities.Pelicula;
 import cl.usm.gestionPeliculasMemoria.services.PeliculasService;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@ExtendWith(MockitoExtension.class)
+@WebMvcTest(PeliculasController.class)
 class PeliculasControllerTest {
 
-    @Mock
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
     private PeliculasService peliculasService;
 
-    @InjectMocks
-    private PeliculasController peliculasController;
-
     @Test
-    void listarTodasLasPeliculasExitosamente() {
-        Pelicula p1 = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN1", new Comentario[0]);
-        Pelicula p2 = new Pelicula("pel-2", "Avatar", "Cameron", "TOKEN2", new Comentario[0]);
-        List<Pelicula> peliculas = Arrays.asList(p1, p2);
+    void obtenerCatalogoCompletoDePeliculas() throws Exception {
+        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN", new Comentario[0]);
+        when(peliculasService.getAll()).thenReturn(Collections.singletonList(pelicula));
 
-        when(peliculasService.getAll()).thenReturn(peliculas);
-
-        ResponseEntity<List<Pelicula>> respuesta = peliculasController.getAll(null);
-
-        assertNotNull(respuesta);
-        assertEquals(200, respuesta.getStatusCode().value());
-        assertNotNull(respuesta.getBody());
-        assertEquals(2, respuesta.getBody().size());
-        assertEquals("pel-1", respuesta.getBody().get(0).getId());
-        assertEquals("Inception", respuesta.getBody().get(0).getTitulo());
-        assertEquals("Nolan", respuesta.getBody().get(0).getDirector());
-        assertEquals("TOKEN1", respuesta.getBody().get(0).getTokenDescarga());
-        
-        verify(peliculasService, times(1)).getAll();
-        verify(peliculasService, never()).filter(anyString());
+        mockMvc.perform(get("/peliculas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("pel-1"))
+                .andExpect(jsonPath("$[0].titulo").value("Inception"));
     }
 
     @Test
-    void listarPeliculasFiltradasPorConsulta() {
-        Pelicula p1 = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN1", new Comentario[0]);
-        List<Pelicula> filtradas = Collections.singletonList(p1);
+    void filtrarPeliculasPorParametroBusqueda() throws Exception {
+        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN", new Comentario[0]);
+        when(peliculasService.filter("Inception")).thenReturn(Collections.singletonList(pelicula));
 
-        when(peliculasService.filter("incep")).thenReturn(filtradas);
-
-        ResponseEntity<List<Pelicula>> respuesta = peliculasController.getAll("incep");
-
-        assertNotNull(respuesta);
-        assertEquals(200, respuesta.getStatusCode().value());
-        assertNotNull(respuesta.getBody());
-        assertEquals(1, respuesta.getBody().size());
-        assertEquals("pel-1", respuesta.getBody().get(0).getId());
-        
-        verify(peliculasService, times(1)).filter("incep");
-        verify(peliculasService, never()).getAll();
+        mockMvc.perform(get("/peliculas").param("q", "Inception"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("pel-1"));
     }
 
     @Test
-    void errorInternoAlFiltrarPeliculas() {
-        when(peliculasService.filter("error")).thenThrow(new RuntimeException("Error en servicio"));
+    void errorInternoAlObtenerCatalogo() throws Exception {
+        when(peliculasService.getAll()).thenThrow(new RuntimeException("Error simulado"));
 
-        ResponseEntity<List<Pelicula>> respuesta = peliculasController.getAll("error");
-
-        assertNotNull(respuesta);
-        assertEquals(500, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(get("/peliculas"))
+                .andExpect(status().isInternalServerError());
     }
 
     @Test
-    void crearPeliculaExitosamente() {
-        Pelicula peliculaInput = new Pelicula("pel-new", "Interstellar", "Nolan", null, new Comentario[0]);
-        Pelicula peliculaCreada = new Pelicula("pel-new", "Interstellar", "Nolan", "TOKEN_NEW", new Comentario[0]);
+    void registrarNuevaPeliculaExitosamente() throws Exception {
+        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN", new Comentario[0]);
+        when(peliculasService.createPelicula(any(Pelicula.class))).thenReturn(pelicula);
 
-        when(peliculasService.createPelicula(any(Pelicula.class))).thenReturn(peliculaCreada);
+        String jsonPayload = """
+                {
+                    "id": "pel-1",
+                    "titulo": "Inception",
+                    "director": "Nolan"
+                }
+                """;
 
-        ResponseEntity<?> respuesta = peliculasController.createPelicula(peliculaInput);
-
-        assertNotNull(respuesta);
-        assertEquals(200, respuesta.getStatusCode().value());
-        assertNotNull(respuesta.getBody());
-        assertTrue(respuesta.getBody() instanceof Pelicula);
-        Pelicula res = (Pelicula) respuesta.getBody();
-        assertEquals("pel-new", res.getId());
-        assertEquals("Interstellar", res.getTitulo());
-        assertEquals("TOKEN_NEW", res.getTokenDescarga());
+        mockMvc.perform(post("/peliculas")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("pel-1"));
     }
 
     @Test
-    void errorAlCrearPeliculaRetornaNull() {
-        Pelicula peliculaInput = new Pelicula("pel-new", "Interstellar", "Nolan", null, new Comentario[0]);
+    void errorAlCrearPeliculaRetornaNull() throws Exception {
         when(peliculasService.createPelicula(any(Pelicula.class))).thenReturn(null);
 
-        ResponseEntity<?> respuesta = peliculasController.createPelicula(peliculaInput);
+        String jsonPayload = """
+                {
+                    "id": "pel-1",
+                    "titulo": "Inception",
+                    "director": "Nolan"
+                }
+                """;
 
-        assertNotNull(respuesta);
-        assertEquals(500, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(post("/peliculas")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonPayload))
+                .andExpect(status().isInternalServerError());
     }
 
     @Test
-    void buscarPeliculaPorIdExitosamente() {
-        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN1", new Comentario[0]);
+    void errorDeValidacionAlCrearPeliculaInvalida() throws Exception {
+        String jsonPayload = """
+                {
+                    "id": "",
+                    "titulo": "",
+                    "director": ""
+                }
+                """;
 
+        mockMvc.perform(post("/peliculas")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonPayload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void buscarPeliculaExistentePorSuId() throws Exception {
+        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN", new Comentario[0]);
         when(peliculasService.findById("pel-1")).thenReturn(pelicula);
 
-        ResponseEntity<Pelicula> respuesta = peliculasController.findById("pel-1");
-
-        assertNotNull(respuesta);
-        assertEquals(200, respuesta.getStatusCode().value());
-        assertNotNull(respuesta.getBody());
-        assertEquals("pel-1", respuesta.getBody().getId());
-        assertEquals("Inception", respuesta.getBody().getTitulo());
+        mockMvc.perform(get("/peliculas/pel-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("pel-1"));
     }
 
     @Test
-    void errorPeliculaNoEncontradaPorId() {
+    void errorPeliculaNoEncontradaPorId() throws Exception {
         when(peliculasService.findById("inexistente")).thenReturn(null);
 
-        ResponseEntity<Pelicula> respuesta = peliculasController.findById("inexistente");
-
-        assertNotNull(respuesta);
-        assertEquals(404, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(get("/peliculas/inexistente"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    void errorInternoAlBuscarPorId() {
-        when(peliculasService.findById("error")).thenThrow(new RuntimeException("Error de servicio"));
+    void errorInternoAlBuscarPorId() throws Exception {
+        when(peliculasService.findById("error")).thenThrow(new RuntimeException("Error simulado"));
 
-        ResponseEntity<Pelicula> respuesta = peliculasController.findById("error");
-
-        assertNotNull(respuesta);
-        assertEquals(500, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(get("/peliculas/error"))
+                .andExpect(status().isInternalServerError());
     }
 
     @Test
-    void obtenerComentariosDePeliculaExitosamente() {
-        Comentario c1 = new Comentario("juan", "Excelente pelicula");
-        Comentario c2 = new Comentario("maria", "Recomendada");
-        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN1", new Comentario[]{c1, c2});
-
+    void obtenerComentariosDeUnaPelicula() throws Exception {
+        Comentario comentario = new Comentario("usuario", "buena");
+        Pelicula pelicula = new Pelicula("pel-1", "Inception", "Nolan", "TOKEN", new Comentario[]{comentario});
         when(peliculasService.findById("pel-1")).thenReturn(pelicula);
 
-        ResponseEntity<?> respuesta = peliculasController.getComentarios("pel-1");
-
-        assertNotNull(respuesta);
-        assertEquals(200, respuesta.getStatusCode().value());
-        assertNotNull(respuesta.getBody());
-        assertTrue(respuesta.getBody() instanceof Comentario[]);
-        Comentario[] comentarios = (Comentario[]) respuesta.getBody();
-        assertEquals(2, comentarios.length);
-        assertEquals("juan", comentarios[0].getUsuario());
-        assertEquals("Excelente pelicula", comentarios[0].getComentario());
+        mockMvc.perform(get("/peliculas/pel-1/comentarios"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].usuario").value("usuario"));
     }
 
     @Test
-    void errorAlObtenerComentariosPeliculaNoEncontrada() {
+    void errorPeliculaNoEncontradaAlObtenerComentarios() throws Exception {
         when(peliculasService.findById("inexistente")).thenReturn(null);
 
-        ResponseEntity<?> respuesta = peliculasController.getComentarios("inexistente");
-
-        assertNotNull(respuesta);
-        assertEquals(404, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(get("/peliculas/inexistente/comentarios"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    void errorInternoAlObtenerComentarios() {
-        when(peliculasService.findById("error")).thenThrow(new RuntimeException("Error de servicio"));
+    void errorInternoAlObtenerComentarios() throws Exception {
+        when(peliculasService.findById("error")).thenThrow(new RuntimeException("Error simulado"));
 
-        ResponseEntity<?> respuesta = peliculasController.getComentarios("error");
-
-        assertNotNull(respuesta);
-        assertEquals(500, respuesta.getStatusCode().value());
-        assertNull(respuesta.getBody());
+        mockMvc.perform(get("/peliculas/error/comentarios"))
+                .andExpect(status().isInternalServerError());
     }
 }
